@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { supabase } from './supabaseClient'
 
 export default function App() {
   return (
@@ -22,11 +23,39 @@ export default function App() {
   )
 }
 
+/* ------------------------------------------------------------------ */
+/*  Mapping helpers: DB uses snake_case, the UI code uses camelCase.   */
+/*  These keep the rest of the component almost identical to before.  */
+/* ------------------------------------------------------------------ */
+function taskFromRow(row) {
+  return {
+    id: row.id,
+    title: row.title || '',
+    description: row.description || '',
+    priority: row.priority || 'Medium',
+    category: row.category || '',
+    status: row.status || 'Pending',
+    dueDate: row.due_date || '',
+    link: row.link || '',
+    completed: !!row.completed
+  }
+}
+
+function messageFromRow(row) {
+  return {
+    id: row.id,
+    sender: row.username || 'Anonymous',
+    text: row.text || '',
+    edited: !!row.edited,
+    time: row.created_at
+      ? new Date(row.created_at).toLocaleTimeString()
+      : ''
+  }
+}
+
 function TaskPanel() {
-  const [tasks, setTasks] = useState(() => {
-    const saved = localStorage.getItem('company_tasks')
-    return saved ? JSON.parse(saved) : []
-  })
+  const [tasks, setTasks] = useState([])
+  const [loading, setLoading] = useState(true)
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -44,9 +73,43 @@ function TaskPanel() {
   const [bulkTasks, setBulkTasks] = useState('')
   const [showBulkImporter, setShowBulkImporter] = useState(false)
 
+  /* Initial load from Supabase */
   useEffect(() => {
-    localStorage.setItem('company_tasks', JSON.stringify(tasks))
-  }, [tasks])
+    let active = true
+
+    const loadTasks = async () => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (!active) return
+
+      if (error) {
+        console.error('Error loading tasks:', error)
+      } else {
+        setTasks((data || []).map(taskFromRow))
+      }
+      setLoading(false)
+    }
+
+    loadTasks()
+
+    /* Realtime: refetch whenever any task row changes */
+    const channel = supabase
+      .channel('tasks-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks' },
+        loadTasks
+      )
+      .subscribe()
+
+    return () => {
+      active = false
+      supabase.removeChannel(channel)
+    }
+  }, [])
 
   const categories = useMemo(() => {
     return ['All', ...new Set(tasks.map((t) => t.category).filter(Boolean))]
@@ -57,22 +120,24 @@ function TaskPanel() {
       ? tasks
       : tasks.filter((t) => t.category === sortCategory)
 
-  const addTask = () => {
+  const addTask = async () => {
     if (!title.trim()) return
 
-    const newTask = {
-      id: Date.now(),
+    const { error } = await supabase.from('tasks').insert({
       title,
       description,
       priority,
       category,
       status,
-      dueDate,
+      due_date: dueDate || null,
       link,
       completed: false
-    }
+    })
 
-    setTasks([newTask, ...tasks])
+    if (error) {
+      console.error('Error adding task:', error)
+      return
+    }
 
     setTitle('')
     setDescription('')
@@ -89,63 +154,76 @@ function TaskPanel() {
     setShowDeleteModal(true)
   }
 
-  const confirmDeleteTask = () => {
-    setTasks(tasks.filter((task) => task.id !== taskToDelete))
+  const confirmDeleteTask = async () => {
+    const { error } = await supabase
+      .from('tasks')
+      .delete()
+      .eq('id', taskToDelete)
+
+    if (error) console.error('Error deleting task:', error)
+
     setTaskToDelete(null)
     setShowDeleteModal(false)
   }
 
-  const renameCategory = (oldCategory, updatedCategory) => {
-    setTasks(
-      tasks.map((task) =>
-        task.category === oldCategory
-          ? { ...task, category: updatedCategory }
-          : task
-      )
-    )
+  const renameCategory = async (oldCategory, updatedCategory) => {
+    const { error } = await supabase
+      .from('tasks')
+      .update({ category: updatedCategory })
+      .eq('category', oldCategory)
+
+    if (error) console.error('Error renaming category:', error)
 
     setEditingCategory('')
     setNewCategoryName('')
   }
 
-  const deleteCategory = (categoryName) => {
-    setTasks(
-      tasks.map((task) =>
-        task.category === categoryName
-          ? { ...task, category: '' }
-          : task
-      )
-    )
+  const deleteCategory = async (categoryName) => {
+    const { error } = await supabase
+      .from('tasks')
+      .update({ category: '' })
+      .eq('category', categoryName)
+
+    if (error) console.error('Error deleting category:', error)
   }
 
-  const toggleTask = (id) => {
-    setTasks(
-      tasks.map((task) =>
-        task.id === id
-          ? { ...task, completed: !task.completed }
-          : task
-      )
-    )
+  const toggleTask = async (id) => {
+    const task = tasks.find((t) => t.id === id)
+    if (!task) return
+
+    const { error } = await supabase
+      .from('tasks')
+      .update({ completed: !task.completed })
+      .eq('id', id)
+
+    if (error) console.error('Error toggling task:', error)
   }
 
-  const importBulkTasks = () => {
+  const importBulkTasks = async () => {
     const parsedTasks = bulkTasks
       .split('\n')
       .map((task) => task.trim())
       .filter(Boolean)
-      .map((task, index) => ({
-        id: Date.now() + index,
+      .map((task) => ({
         title: task,
         description: '',
         priority: 'Medium',
         category: '',
         status: 'Pending',
-        dueDate: '',
+        due_date: null,
         link: '',
         completed: false
       }))
 
-    setTasks([...parsedTasks, ...tasks])
+    if (parsedTasks.length === 0) return
+
+    const { error } = await supabase.from('tasks').insert(parsedTasks)
+
+    if (error) {
+      console.error('Error importing tasks:', error)
+      return
+    }
+
     setBulkTasks('')
     setShowBulkImporter(false)
   }
@@ -360,6 +438,18 @@ function TaskPanel() {
       )}
 
       <div className='space-y-3'>
+        {loading && (
+          <div className='bg-slate-50 border border-slate-200 rounded-3xl p-8 text-center text-sm text-slate-400'>
+            Loading tasks...
+          </div>
+        )}
+
+        {!loading && filteredTasks.length === 0 && (
+          <div className='bg-slate-50 border border-slate-200 rounded-3xl p-8 text-center text-sm text-slate-400'>
+            No tasks yet. Add your first one to get started.
+          </div>
+        )}
+
         {filteredTasks.map((task) => (
           <div
             key={task.id}
@@ -472,12 +562,10 @@ function TaskPanel() {
 }
 
 function ChatPanel() {
-  const [messages, setMessages] = useState(() => {
-    const saved = localStorage.getItem('company_chat')
-    return saved ? JSON.parse(saved) : []
-  })
+  const [messages, setMessages] = useState([])
 
   const [message, setMessage] = useState('')
+  /* The display name stays in localStorage: it is per-person, not shared. */
   const [name, setName] = useState(() => {
     return localStorage.getItem('workspace_name') || ''
   })
@@ -488,37 +576,67 @@ function ChatPanel() {
   const [openMenuId, setOpenMenuId] = useState(null)
 
   useEffect(() => {
-    localStorage.setItem('company_chat', JSON.stringify(messages))
-  }, [messages])
-
-  useEffect(() => {
     localStorage.setItem('workspace_name', name)
   }, [name])
 
-  const sendMessage = () => {
-    if (!message.trim()) return
+  /* Initial load + realtime for chat */
+  useEffect(() => {
+    let active = true
 
-    const newMessage = {
-      id: Date.now(),
-      sender: name || 'Anonymous',
-      text: message,
-      time: new Date().toLocaleTimeString(),
-      edited: false
+    const loadMessages = async () => {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (!active) return
+
+      if (error) {
+        console.error('Error loading messages:', error)
+      } else {
+        /* fetched newest-first, reverse so oldest is at top */
+        setMessages((data || []).map(messageFromRow).reverse())
+      }
     }
 
-    const updatedMessages = [...messages, newMessage]
+    loadMessages()
 
-    const trimmedMessages =
-      updatedMessages.length > 50
-        ? updatedMessages.slice(updatedMessages.length - 50)
-        : updatedMessages
+    const channel = supabase
+      .channel('messages-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'messages' },
+        loadMessages
+      )
+      .subscribe()
 
-    setMessages(trimmedMessages)
+    return () => {
+      active = false
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  const sendMessage = async () => {
+    if (!message.trim()) return
+
+    const { error } = await supabase.from('messages').insert({
+      username: name || 'Anonymous',
+      text: message,
+      edited: false
+    })
+
+    if (error) {
+      console.error('Error sending message:', error)
+      return
+    }
+
     setMessage('')
   }
 
-  const deleteMessage = (id) => {
-    setMessages(messages.filter((msg) => msg.id !== id))
+  const deleteMessage = async (id) => {
+    const { error } = await supabase.from('messages').delete().eq('id', id)
+    if (error) console.error('Error deleting message:', error)
   }
 
   const startEditingMessage = (msg) => {
@@ -526,20 +644,15 @@ function ChatPanel() {
     setEditedText(msg.text)
   }
 
-  const saveEditedMessage = (id) => {
+  const saveEditedMessage = async (id) => {
     if (!editedText.trim()) return
 
-    setMessages(
-      messages.map((msg) =>
-        msg.id === id
-          ? {
-              ...msg,
-              text: editedText,
-              edited: true
-            }
-          : msg
-      )
-    )
+    const { error } = await supabase
+      .from('messages')
+      .update({ text: editedText, edited: true })
+      .eq('id', id)
+
+    if (error) console.error('Error editing message:', error)
 
     setEditingMessageId(null)
     setEditedText('')
@@ -575,6 +688,12 @@ function ChatPanel() {
       )}
 
       <div className='flex-1 overflow-y-auto space-y-2 pr-1'>
+        {messages.length === 0 && (
+          <div className='text-center text-xs text-slate-400 py-8'>
+            No messages yet.
+          </div>
+        )}
+
         {messages.map((msg) => (
           <div
             key={msg.id}
