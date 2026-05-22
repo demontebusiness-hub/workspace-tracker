@@ -172,6 +172,24 @@ function TaskPanel() {
     return { total: tasks.length, open, overdue, done }
   }, [tasks])
 
+  /* Grouped view: buckets filteredTasks by category.
+     Returns an array of { category, tasks } so render order is stable.
+     Uncategorized tasks land in a 'No Category' group, shown last. */
+  const groupedTasks = useMemo(() => {
+    const groups = {}
+    for (const task of filteredTasks) {
+      const key = task.category || 'No Category'
+      if (!groups[key]) groups[key] = []
+      groups[key].push(task)
+    }
+    const named = Object.keys(groups)
+      .filter((k) => k !== 'No Category')
+      .sort((a, b) => a.localeCompare(b))
+    const ordered = [...named]
+    if (groups['No Category']) ordered.push('No Category')
+    return ordered.map((category) => ({ category, tasks: groups[category] }))
+  }, [filteredTasks])
+
   const addTask = async () => {
     if (!title.trim()) return
 
@@ -403,6 +421,7 @@ function TaskPanel() {
             <option value='Newest'>Sort: Newest</option>
             <option value='Due Date'>Sort: Due Date</option>
             <option value='Priority'>Sort: Priority</option>
+            <option value='Group'>Group by Category</option>
           </select>
         </div>
       </div>
@@ -544,97 +563,39 @@ function TaskPanel() {
           </div>
         )}
 
-        {filteredTasks.map((task) => (
-          <div
-            key={task.id}
-            className={`rounded-3xl p-4 border ${
-              isOverdue(task)
-                ? 'bg-red-50 border-red-300'
-                : 'bg-slate-50 border-slate-200'
-            }`}
-          >
-            <div className='flex items-start justify-between gap-4'>
-              <div className='flex gap-3 flex-1'>
-                <input
-                  type='checkbox'
-                  checked={task.completed}
-                  onChange={() => toggleTask(task.id)}
-                  className='mt-1 w-4 h-4'
-                />
-
-                <div className='flex-1'>
-                  <div className='flex flex-wrap gap-2 mb-2'>
-                    {task.category && (
-                      <span className='bg-slate-200 px-2 py-1 rounded-full text-[11px]'>
-                        {task.category}
-                      </span>
-                    )}
-
-                    <span className='bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-[11px]'>
-                      {task.status}
-                    </span>
-                  </div>
-
-                  <h3
-                    className={`text-lg font-semibold ${
-                      task.completed ? 'line-through opacity-50' : ''
-                    }`}
-                  >
-                    {task.title}
+        {sortBy === 'Group'
+          ? groupedTasks.map((group) => (
+              <div key={group.category} className='space-y-3'>
+                <div className='flex items-center gap-2 pt-1'>
+                  <h3 className='text-sm font-bold uppercase tracking-wide text-slate-500'>
+                    {group.category}
                   </h3>
-
-                  {task.description && (
-                    <p className='text-sm text-slate-600 mt-2'>
-                      {task.description}
-                    </p>
-                  )}
-
-                  {task.link && (
-                    <a
-                      href={task.link}
-                      target='_blank'
-                      rel='noreferrer'
-                      className='text-blue-600 underline break-all text-sm mt-2 inline-block'
-                    >
-                      {task.link}
-                    </a>
-                  )}
-
-                  <div className='flex gap-2 flex-wrap mt-3'>
-                    <span className='bg-slate-200 px-2 py-1 rounded-full text-xs'>
-                      {task.priority}
-                    </span>
-
-                    {task.dueDate && (
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs ${
-                          isOverdue(task)
-                            ? 'bg-red-200 text-red-800'
-                            : 'bg-slate-200'
-                        }`}
-                      >
-                        Due: {task.dueDate}
-                      </span>
-                    )}
-
-                    {isOverdue(task) && (
-                      <span className='bg-red-500 text-white px-2 py-1 rounded-full text-xs font-semibold'>
-                        Overdue
-                      </span>
-                    )}
-                  </div>
+                  <span className='bg-slate-200 text-slate-600 rounded-full px-2 py-0.5 text-[11px] font-semibold'>
+                    {group.tasks.length}
+                  </span>
+                  <div className='flex-1 h-px bg-slate-200' />
                 </div>
-              </div>
 
-              <button
-                onClick={() => removeTask(task.id)}
-                className='bg-red-500 hover:bg-red-400 text-white px-3 py-2 rounded-xl text-xs transition'
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        ))}
+                {group.tasks.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    isOverdue={isOverdue}
+                    toggleTask={toggleTask}
+                    removeTask={removeTask}
+                  />
+                ))}
+              </div>
+            ))
+          : filteredTasks.map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                isOverdue={isOverdue}
+                toggleTask={toggleTask}
+                removeTask={removeTask}
+              />
+            ))}
       </div>
 
       {showDeleteModal && (
@@ -668,6 +629,98 @@ function TaskPanel() {
         </div>
       )}
     </section>
+  )
+}
+
+/* Single task card. Extracted so the flat list and the grouped
+   view render identical cards without duplicated JSX. */
+function TaskCard({ task, isOverdue, toggleTask, removeTask }) {
+  const overdue = isOverdue(task)
+  return (
+    <div
+      className={`rounded-3xl p-4 border ${
+        overdue ? 'bg-red-50 border-red-300' : 'bg-slate-50 border-slate-200'
+      }`}
+    >
+      <div className='flex items-start justify-between gap-4'>
+        <div className='flex gap-3 flex-1'>
+          <input
+            type='checkbox'
+            checked={task.completed}
+            onChange={() => toggleTask(task.id)}
+            className='mt-1 w-4 h-4'
+          />
+
+          <div className='flex-1'>
+            <div className='flex flex-wrap gap-2 mb-2'>
+              {task.category && (
+                <span className='bg-slate-200 px-2 py-1 rounded-full text-[11px]'>
+                  {task.category}
+                </span>
+              )}
+
+              <span className='bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-[11px]'>
+                {task.status}
+              </span>
+            </div>
+
+            <h3
+              className={`text-lg font-semibold ${
+                task.completed ? 'line-through opacity-50' : ''
+              }`}
+            >
+              {task.title}
+            </h3>
+
+            {task.description && (
+              <p className='text-sm text-slate-600 mt-2'>
+                {task.description}
+              </p>
+            )}
+
+            {task.link && (
+              <a
+                href={task.link}
+                target='_blank'
+                rel='noreferrer'
+                className='text-blue-600 underline break-all text-sm mt-2 inline-block'
+              >
+                {task.link}
+              </a>
+            )}
+
+            <div className='flex gap-2 flex-wrap mt-3'>
+              <span className='bg-slate-200 px-2 py-1 rounded-full text-xs'>
+                {task.priority}
+              </span>
+
+              {task.dueDate && (
+                <span
+                  className={`px-2 py-1 rounded-full text-xs ${
+                    overdue ? 'bg-red-200 text-red-800' : 'bg-slate-200'
+                  }`}
+                >
+                  Due: {task.dueDate}
+                </span>
+              )}
+
+              {overdue && (
+                <span className='bg-red-500 text-white px-2 py-1 rounded-full text-xs font-semibold'>
+                  Overdue
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={() => removeTask(task.id)}
+          className='bg-red-500 hover:bg-red-400 text-white px-3 py-2 rounded-xl text-xs transition'
+        >
+          Remove
+        </button>
+      </div>
+    </div>
   )
 }
 
