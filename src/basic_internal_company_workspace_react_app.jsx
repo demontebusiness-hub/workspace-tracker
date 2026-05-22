@@ -1,0 +1,677 @@
+import { useEffect, useMemo, useState } from 'react'
+
+export default function App() {
+  return (
+    <div className='min-h-screen bg-white text-slate-900 p-6'>
+      <div className='max-w-[1600px] mx-auto'>
+        <header className='mb-6'>
+          <h1 className='text-3xl font-bold'>
+            PoR x Summit x LL Workspace Tracker
+          </h1>
+          <p className='text-slate-500 mt-1 text-sm'>
+            Internal operations workspace.
+          </p>
+        </header>
+
+        <div className='grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start'>
+          <TaskPanel />
+          <ChatPanel />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TaskPanel() {
+  const [tasks, setTasks] = useState(() => {
+    const saved = localStorage.getItem('company_tasks')
+    return saved ? JSON.parse(saved) : []
+  })
+
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [priority, setPriority] = useState('Medium')
+  const [category, setCategory] = useState('')
+  const [status, setStatus] = useState('Pending')
+  const [dueDate, setDueDate] = useState('')
+  const [link, setLink] = useState('')
+  const [sortCategory, setSortCategory] = useState('All')
+  const [showTaskForm, setShowTaskForm] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [taskToDelete, setTaskToDelete] = useState(null)
+  const [editingCategory, setEditingCategory] = useState('')
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [bulkTasks, setBulkTasks] = useState('')
+  const [showBulkImporter, setShowBulkImporter] = useState(false)
+
+  useEffect(() => {
+    localStorage.setItem('company_tasks', JSON.stringify(tasks))
+  }, [tasks])
+
+  const categories = useMemo(() => {
+    return ['All', ...new Set(tasks.map((t) => t.category).filter(Boolean))]
+  }, [tasks])
+
+  const filteredTasks =
+    sortCategory === 'All'
+      ? tasks
+      : tasks.filter((t) => t.category === sortCategory)
+
+  const addTask = () => {
+    if (!title.trim()) return
+
+    const newTask = {
+      id: Date.now(),
+      title,
+      description,
+      priority,
+      category,
+      status,
+      dueDate,
+      link,
+      completed: false
+    }
+
+    setTasks([newTask, ...tasks])
+
+    setTitle('')
+    setDescription('')
+    setPriority('Medium')
+    setCategory('')
+    setStatus('Pending')
+    setDueDate('')
+    setLink('')
+    setShowTaskForm(false)
+  }
+
+  const removeTask = (id) => {
+    setTaskToDelete(id)
+    setShowDeleteModal(true)
+  }
+
+  const confirmDeleteTask = () => {
+    setTasks(tasks.filter((task) => task.id !== taskToDelete))
+    setTaskToDelete(null)
+    setShowDeleteModal(false)
+  }
+
+  const renameCategory = (oldCategory, updatedCategory) => {
+    setTasks(
+      tasks.map((task) =>
+        task.category === oldCategory
+          ? { ...task, category: updatedCategory }
+          : task
+      )
+    )
+
+    setEditingCategory('')
+    setNewCategoryName('')
+  }
+
+  const deleteCategory = (categoryName) => {
+    setTasks(
+      tasks.map((task) =>
+        task.category === categoryName
+          ? { ...task, category: '' }
+          : task
+      )
+    )
+  }
+
+  const toggleTask = (id) => {
+    setTasks(
+      tasks.map((task) =>
+        task.id === id
+          ? { ...task, completed: !task.completed }
+          : task
+      )
+    )
+  }
+
+  const importBulkTasks = () => {
+    const parsedTasks = bulkTasks
+      .split('\n')
+      .map((task) => task.trim())
+      .filter(Boolean)
+      .map((task, index) => ({
+        id: Date.now() + index,
+        title: task,
+        description: '',
+        priority: 'Medium',
+        category: '',
+        status: 'Pending',
+        dueDate: '',
+        link: '',
+        completed: false
+      }))
+
+    setTasks([...parsedTasks, ...tasks])
+    setBulkTasks('')
+    setShowBulkImporter(false)
+  }
+
+  return (
+    <section className='bg-white border border-slate-200 rounded-3xl p-5 shadow-sm'>
+      <div className='flex items-center justify-between gap-4 mb-5 flex-wrap'>
+        <div>
+          <h2 className='text-xl font-semibold'>Operations Dashboard</h2>
+          <p className='text-sm text-slate-500'>
+            Manage workflow and priorities.
+          </p>
+        </div>
+
+        <div className='flex gap-2 flex-wrap'>
+          <button
+            onClick={() => setShowTaskForm(!showTaskForm)}
+            className='bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-2xl text-sm font-semibold transition'
+          >
+            {showTaskForm ? 'Close Task Form' : '+ Add New Task'}
+          </button>
+
+          <button
+            onClick={() => setShowBulkImporter(!showBulkImporter)}
+            className='bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded-2xl text-sm font-semibold transition'
+          >
+            {showBulkImporter ? 'Close Importer' : 'Bulk Import'}
+          </button>
+        </div>
+      </div>
+
+      <div className='mb-5 space-y-3'>
+        <div className='flex flex-wrap gap-2'>
+          {categories
+            .filter((cat) => cat !== 'All')
+            .map((cat) => (
+              <div
+                key={cat}
+                className='flex items-center gap-2 bg-slate-100 border border-slate-200 rounded-full px-3 py-1'
+              >
+                {editingCategory === cat ? (
+                  <>
+                    <input
+                      defaultValue={cat}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      className='bg-white border border-slate-300 rounded px-2 py-1 text-xs w-24'
+                    />
+
+                    <button
+                      onClick={() =>
+                        renameCategory(cat, newCategoryName || cat)
+                      }
+                      className='text-xs text-blue-600'
+                    >
+                      Save
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className='text-xs'>{cat}</span>
+
+                    <button
+                      onClick={() => setEditingCategory(cat)}
+                      className='text-[10px] text-blue-600'
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      onClick={() => deleteCategory(cat)}
+                      className='text-[10px] text-red-500'
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+        </div>
+
+        <select
+          value={sortCategory}
+          onChange={(e) => setSortCategory(e.target.value)}
+          className='border border-slate-300 rounded-xl px-3 py-2 text-sm'
+        >
+          {categories.map((cat) => (
+            <option key={cat}>{cat}</option>
+          ))}
+        </select>
+      </div>
+
+      {showBulkImporter && (
+        <div className='bg-slate-50 border border-slate-200 rounded-3xl p-4 mb-5'>
+          <div className='mb-3'>
+            <h3 className='font-semibold text-sm'>Bulk Task Importer</h3>
+            <p className='text-xs text-slate-500'>
+              Paste one task per line. Tasks can still be edited afterward.
+            </p>
+          </div>
+
+          <textarea
+            value={bulkTasks}
+            onChange={(e) => setBulkTasks(e.target.value)}
+            placeholder={`Example:\nCall attorney\nReview CPT disputes\nUpdate provider spreadsheet`}
+            className='w-full min-h-40 resize-none border border-slate-300 rounded-2xl px-4 py-3 text-sm'
+          />
+
+          <button
+            onClick={importBulkTasks}
+            className='w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-2xl text-sm font-semibold transition'
+          >
+            Import Tasks
+          </button>
+        </div>
+      )}
+
+      {showTaskForm && (
+        <div className='bg-slate-50 border border-slate-200 rounded-3xl p-4 mb-5'>
+          <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder='Task title'
+              className='border border-slate-300 rounded-xl px-3 py-2 text-sm'
+            />
+
+            <div className='flex gap-2 md:col-span-2 flex-wrap'>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className='border border-slate-300 rounded-xl px-3 py-2 text-sm flex-1 min-w-[140px]'
+              >
+                <option value=''>Select category</option>
+                {categories
+                  .filter((cat) => cat !== 'All')
+                  .map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+              </select>
+
+              <input
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder='New category'
+                className='border border-slate-300 rounded-xl px-3 py-2 text-sm flex-1 min-w-[140px]'
+              />
+
+              <button
+                onClick={() => {
+                  if (!newCategoryName.trim()) return
+                  setCategory(newCategoryName)
+                  setNewCategoryName('')
+                }}
+                className='bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded-xl text-xs whitespace-nowrap'
+              >
+                Add
+              </button>
+            </div>
+
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder='Task notes'
+              className='md:col-span-2 border border-slate-300 rounded-xl px-3 py-2 text-sm min-h-24 resize-none'
+            />
+
+            <input
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              placeholder='Paste URL'
+              className='border border-slate-300 rounded-xl px-3 py-2 text-sm'
+            />
+
+            <input
+              type='date'
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className='border border-slate-300 rounded-xl px-3 py-2 text-sm'
+            />
+
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              className='border border-slate-300 rounded-xl px-3 py-2 text-sm'
+            >
+              <option>High</option>
+              <option>Medium</option>
+              <option>Low</option>
+            </select>
+
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className='border border-slate-300 rounded-xl px-3 py-2 text-sm'
+            >
+              <option>Pending</option>
+              <option>In Progress</option>
+              <option>Waiting</option>
+              <option>Completed</option>
+            </select>
+          </div>
+
+          <button
+            onClick={addTask}
+            className='w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-2xl text-sm font-semibold transition'
+          >
+            Save Task
+          </button>
+        </div>
+      )}
+
+      <div className='space-y-3'>
+        {filteredTasks.map((task) => (
+          <div
+            key={task.id}
+            className='bg-slate-50 border border-slate-200 rounded-3xl p-4'
+          >
+            <div className='flex items-start justify-between gap-4'>
+              <div className='flex gap-3 flex-1'>
+                <input
+                  type='checkbox'
+                  checked={task.completed}
+                  onChange={() => toggleTask(task.id)}
+                  className='mt-1 w-4 h-4'
+                />
+
+                <div className='flex-1'>
+                  <div className='flex flex-wrap gap-2 mb-2'>
+                    {task.category && (
+                      <span className='bg-slate-200 px-2 py-1 rounded-full text-[11px]'>
+                        {task.category}
+                      </span>
+                    )}
+
+                    <span className='bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-[11px]'>
+                      {task.status}
+                    </span>
+                  </div>
+
+                  <h3
+                    className={`text-lg font-semibold ${
+                      task.completed ? 'line-through opacity-50' : ''
+                    }`}
+                  >
+                    {task.title}
+                  </h3>
+
+                  {task.description && (
+                    <p className='text-sm text-slate-600 mt-2'>
+                      {task.description}
+                    </p>
+                  )}
+
+                  {task.link && (
+                    <a
+                      href={task.link}
+                      target='_blank'
+                      rel='noreferrer'
+                      className='text-blue-600 underline break-all text-sm mt-2 inline-block'
+                    >
+                      {task.link}
+                    </a>
+                  )}
+
+                  <div className='flex gap-2 flex-wrap mt-3'>
+                    <span className='bg-slate-200 px-2 py-1 rounded-full text-xs'>
+                      {task.priority}
+                    </span>
+
+                    {task.dueDate && (
+                      <span className='bg-slate-200 px-2 py-1 rounded-full text-xs'>
+                        Due: {task.dueDate}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => removeTask(task.id)}
+                className='bg-red-500 hover:bg-red-400 text-white px-3 py-2 rounded-xl text-xs transition'
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showDeleteModal && (
+        <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50'>
+          <div className='bg-white rounded-3xl p-6 w-[90%] max-w-sm shadow-2xl'>
+            <h3 className='text-lg font-semibold mb-2'>Delete Task?</h3>
+
+            <p className='text-sm text-slate-500 mb-5'>
+              Are you sure you want to delete this task? This action cannot be undone.
+            </p>
+
+            <div className='flex gap-3 justify-end'>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false)
+                  setTaskToDelete(null)
+                }}
+                className='px-4 py-2 rounded-xl bg-slate-200 text-sm'
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={confirmDeleteTask}
+                className='px-4 py-2 rounded-xl bg-red-500 text-white text-sm'
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ChatPanel() {
+  const [messages, setMessages] = useState(() => {
+    const saved = localStorage.getItem('company_chat')
+    return saved ? JSON.parse(saved) : []
+  })
+
+  const [message, setMessage] = useState('')
+  const [name, setName] = useState(() => {
+    return localStorage.getItem('workspace_name') || ''
+  })
+
+  const [editingName, setEditingName] = useState(false)
+  const [editingMessageId, setEditingMessageId] = useState(null)
+  const [editedText, setEditedText] = useState('')
+  const [openMenuId, setOpenMenuId] = useState(null)
+
+  useEffect(() => {
+    localStorage.setItem('company_chat', JSON.stringify(messages))
+  }, [messages])
+
+  useEffect(() => {
+    localStorage.setItem('workspace_name', name)
+  }, [name])
+
+  const sendMessage = () => {
+    if (!message.trim()) return
+
+    const newMessage = {
+      id: Date.now(),
+      sender: name || 'Anonymous',
+      text: message,
+      time: new Date().toLocaleTimeString(),
+      edited: false
+    }
+
+    const updatedMessages = [...messages, newMessage]
+
+    const trimmedMessages =
+      updatedMessages.length > 50
+        ? updatedMessages.slice(updatedMessages.length - 50)
+        : updatedMessages
+
+    setMessages(trimmedMessages)
+    setMessage('')
+  }
+
+  const deleteMessage = (id) => {
+    setMessages(messages.filter((msg) => msg.id !== id))
+  }
+
+  const startEditingMessage = (msg) => {
+    setEditingMessageId(msg.id)
+    setEditedText(msg.text)
+  }
+
+  const saveEditedMessage = (id) => {
+    if (!editedText.trim()) return
+
+    setMessages(
+      messages.map((msg) =>
+        msg.id === id
+          ? {
+              ...msg,
+              text: editedText,
+              edited: true
+            }
+          : msg
+      )
+    )
+
+    setEditingMessageId(null)
+    setEditedText('')
+  }
+
+  return (
+    <aside className='bg-white border border-slate-200 rounded-3xl p-4 shadow-sm sticky top-6 h-[calc(100vh-48px)] flex flex-col'>
+      <div className='mb-4'>
+        <h2 className='text-xl font-semibold'>Chat</h2>
+      </div>
+
+      <div className='bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2 flex items-center justify-between mb-3'>
+        <div>
+          <p className='text-[10px] text-slate-500'>Logged in as</p>
+          <p className='font-semibold text-sm'>{name || 'No name set'}</p>
+        </div>
+
+        <button
+          onClick={() => setEditingName(!editingName)}
+          className='bg-slate-200 hover:bg-slate-300 px-3 py-1.5 rounded-xl text-xs transition'
+        >
+          {editingName ? 'Close' : 'Edit'}
+        </button>
+      </div>
+
+      {editingName && (
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder='Enter your name'
+          className='border border-slate-300 rounded-xl px-3 py-2 text-sm mb-3'
+        />
+      )}
+
+      <div className='flex-1 overflow-y-auto space-y-2 pr-1'>
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className='bg-slate-50 border border-slate-200 rounded-2xl p-2.5'
+          >
+            <div className='flex items-center justify-between mb-1'>
+              <p className='text-sm font-semibold text-blue-600'>
+                {msg.sender}
+              </p>
+
+              <div className='flex items-center gap-2 relative'>
+                <p className='text-[10px] text-slate-400'>
+                  {msg.time}
+                </p>
+
+                <button
+                  onClick={() =>
+                    setOpenMenuId(openMenuId === msg.id ? null : msg.id)
+                  }
+                  className='text-slate-500 hover:text-slate-700 text-sm px-1'
+                >
+                  ⋯
+                </button>
+
+                {openMenuId === msg.id && (
+                  <div className='absolute top-5 right-0 bg-white border border-slate-200 shadow-lg rounded-xl py-1 w-24 z-10'>
+                    <button
+                      onClick={() => {
+                        startEditingMessage(msg)
+                        setOpenMenuId(null)
+                      }}
+                      className='w-full text-left px-3 py-2 text-xs hover:bg-slate-100'
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        deleteMessage(msg.id)
+                        setOpenMenuId(null)
+                      }}
+                      className='w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-slate-100'
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {editingMessageId === msg.id ? (
+              <div className='space-y-2'>
+                <textarea
+                  value={editedText}
+                  onChange={(e) => setEditedText(e.target.value)}
+                  className='w-full border border-slate-300 rounded-xl px-2 py-2 text-[13px] resize-none h-16'
+                />
+
+                <button
+                  onClick={() => saveEditedMessage(msg.id)}
+                  className='bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded-lg text-xs transition'
+                >
+                  Save
+                </button>
+              </div>
+            ) : (
+              <div>
+                <p className='text-[13px] leading-snug break-words whitespace-pre-wrap'>
+                  {msg.text}
+                </p>
+
+                {msg.edited && (
+                  <p className='text-[10px] text-slate-400 mt-1 italic'>
+                    edited
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className='mt-3 space-y-2'>
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder='Type a message...'
+          className='w-full h-14 resize-none border border-slate-300 rounded-2xl px-3 py-2 text-[13px]'
+        />
+
+        <button
+          onClick={sendMessage}
+          className='w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-2xl text-sm font-semibold transition'
+        >
+          Send
+        </button>
+      </div>
+    </aside>
+  )
+}
