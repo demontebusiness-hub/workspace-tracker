@@ -193,11 +193,17 @@ function TaskPanel() {
   const addTask = async () => {
     if (!title.trim()) return
 
+    /* If a category was typed in the "New category" box but Add was
+       never clicked, still use it. Typed value wins; otherwise the
+       selected category; otherwise empty. */
+    const finalCategory =
+      (newCategoryName.trim() || category || '').trim()
+
     const { error } = await supabase.from('tasks').insert({
       title,
       description,
       priority,
-      category,
+      category: finalCategory,
       status,
       due_date: dueDate || null,
       link,
@@ -213,6 +219,7 @@ function TaskPanel() {
     setDescription('')
     setPriority('Medium')
     setCategory('')
+    setNewCategoryName('')
     setStatus('Pending')
     setDueDate('')
     setLink('')
@@ -480,7 +487,7 @@ function TaskPanel() {
               <input
                 value={newCategoryName}
                 onChange={(e) => setNewCategoryName(e.target.value)}
-                placeholder='New category'
+                placeholder='Or type a new category'
                 className='border border-slate-300 rounded-xl px-3 py-2 text-sm flex-1 min-w-[140px]'
               />
 
