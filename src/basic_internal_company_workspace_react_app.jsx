@@ -72,6 +72,8 @@ function TaskPanel() {
   const [newCategoryName, setNewCategoryName] = useState('')
   const [bulkTasks, setBulkTasks] = useState('')
   const [showBulkImporter, setShowBulkImporter] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [sortBy, setSortBy] = useState('Newest')
 
   /* Initial load from Supabase */
   useEffect(() => {
@@ -115,10 +117,60 @@ function TaskPanel() {
     return ['All', ...new Set(tasks.map((t) => t.category).filter(Boolean))]
   }, [tasks])
 
-  const filteredTasks =
-    sortCategory === 'All'
-      ? tasks
-      : tasks.filter((t) => t.category === sortCategory)
+  /* Overdue = has a due date, the date is before today, and not completed */
+  const isOverdue = (task) => {
+    if (!task.dueDate || task.completed) return false
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const due = new Date(task.dueDate)
+    return due < today
+  }
+
+  /* Category filter -> search filter -> sort. Does not mutate `tasks`. */
+  const filteredTasks = useMemo(() => {
+    let result =
+      sortCategory === 'All'
+        ? tasks
+        : tasks.filter((t) => t.category === sortCategory)
+
+    const term = searchTerm.trim().toLowerCase()
+    if (term) {
+      result = result.filter(
+        (t) =>
+          (t.title || '').toLowerCase().includes(term) ||
+          (t.description || '').toLowerCase().includes(term) ||
+          (t.category || '').toLowerCase().includes(term)
+      )
+    }
+
+    const priorityRank = { High: 0, Medium: 1, Low: 2 }
+    const sorted = [...result]
+
+    if (sortBy === 'Due Date') {
+      sorted.sort((a, b) => {
+        if (!a.dueDate && !b.dueDate) return 0
+        if (!a.dueDate) return 1
+        if (!b.dueDate) return -1
+        return new Date(a.dueDate) - new Date(b.dueDate)
+      })
+    } else if (sortBy === 'Priority') {
+      sorted.sort(
+        (a, b) =>
+          (priorityRank[a.priority] ?? 1) - (priorityRank[b.priority] ?? 1)
+      )
+    }
+    /* 'Newest' = leave as-is; tasks already arrive newest-first from Supabase */
+
+    return sorted
+  }, [tasks, sortCategory, searchTerm, sortBy])
+
+  /* Stats reflect ALL tasks, not the filtered view */
+  const stats = useMemo(() => {
+    const done = tasks.filter((t) => t.completed).length
+    const overdue = tasks.filter((t) => isOverdue(t)).length
+    const open = tasks.length - done
+    return { total: tasks.length, open, overdue, done }
+  }, [tasks])
 
   const addTask = async () => {
     if (!title.trim()) return
@@ -255,6 +307,27 @@ function TaskPanel() {
         </div>
       </div>
 
+      <div className='flex flex-wrap gap-2 mb-5'>
+        <span className='bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-600'>
+          {stats.total} total
+        </span>
+        <span className='bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5 text-xs font-medium text-blue-700'>
+          {stats.open} open
+        </span>
+        <span
+          className={`border rounded-xl px-3 py-1.5 text-xs font-medium ${
+            stats.overdue > 0
+              ? 'bg-red-50 border-red-200 text-red-700'
+              : 'bg-slate-100 border-slate-200 text-slate-500'
+          }`}
+        >
+          {stats.overdue} overdue
+        </span>
+        <span className='bg-green-50 border border-green-200 rounded-xl px-3 py-1.5 text-xs font-medium text-green-700'>
+          {stats.done} done
+        </span>
+      </div>
+
       <div className='mb-5 space-y-3'>
         <div className='flex flex-wrap gap-2'>
           {categories
@@ -304,15 +377,34 @@ function TaskPanel() {
             ))}
         </div>
 
-        <select
-          value={sortCategory}
-          onChange={(e) => setSortCategory(e.target.value)}
-          className='border border-slate-300 rounded-xl px-3 py-2 text-sm'
-        >
-          {categories.map((cat) => (
-            <option key={cat}>{cat}</option>
-          ))}
-        </select>
+        <div className='flex flex-wrap gap-2 items-center'>
+          <input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder='Search tasks...'
+            className='border border-slate-300 rounded-xl px-3 py-2 text-sm flex-1 min-w-[180px]'
+          />
+
+          <select
+            value={sortCategory}
+            onChange={(e) => setSortCategory(e.target.value)}
+            className='border border-slate-300 rounded-xl px-3 py-2 text-sm'
+          >
+            {categories.map((cat) => (
+              <option key={cat}>{cat}</option>
+            ))}
+          </select>
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className='border border-slate-300 rounded-xl px-3 py-2 text-sm'
+          >
+            <option value='Newest'>Sort: Newest</option>
+            <option value='Due Date'>Sort: Due Date</option>
+            <option value='Priority'>Sort: Priority</option>
+          </select>
+        </div>
       </div>
 
       {showBulkImporter && (
@@ -446,14 +538,20 @@ function TaskPanel() {
 
         {!loading && filteredTasks.length === 0 && (
           <div className='bg-slate-50 border border-slate-200 rounded-3xl p-8 text-center text-sm text-slate-400'>
-            No tasks yet. Add your first one to get started.
+            {tasks.length === 0
+              ? 'No tasks yet. Add your first one to get started.'
+              : 'No tasks match your search or filter.'}
           </div>
         )}
 
         {filteredTasks.map((task) => (
           <div
             key={task.id}
-            className='bg-slate-50 border border-slate-200 rounded-3xl p-4'
+            className={`rounded-3xl p-4 border ${
+              isOverdue(task)
+                ? 'bg-red-50 border-red-300'
+                : 'bg-slate-50 border-slate-200'
+            }`}
           >
             <div className='flex items-start justify-between gap-4'>
               <div className='flex gap-3 flex-1'>
@@ -508,8 +606,20 @@ function TaskPanel() {
                     </span>
 
                     {task.dueDate && (
-                      <span className='bg-slate-200 px-2 py-1 rounded-full text-xs'>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs ${
+                          isOverdue(task)
+                            ? 'bg-red-200 text-red-800'
+                            : 'bg-slate-200'
+                        }`}
+                      >
                         Due: {task.dueDate}
+                      </span>
+                    )}
+
+                    {isOverdue(task) && (
+                      <span className='bg-red-500 text-white px-2 py-1 rounded-full text-xs font-semibold'>
+                        Overdue
                       </span>
                     )}
                   </div>
