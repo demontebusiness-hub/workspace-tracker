@@ -277,20 +277,34 @@ function TaskPanel() {
   }
 
   const importBulkTasks = async () => {
+    /* Each line: "Title | Category | Priority"
+       Category and Priority are optional. Priority must be
+       High/Medium/Low (case-insensitive) or it falls back to Medium. */
+    const validPriorities = { high: 'High', medium: 'Medium', low: 'Low' }
+
     const parsedTasks = bulkTasks
       .split('\n')
-      .map((task) => task.trim())
+      .map((line) => line.trim())
       .filter(Boolean)
-      .map((task) => ({
-        title: task,
-        description: '',
-        priority: 'Medium',
-        category: '',
-        status: 'Pending',
-        due_date: null,
-        link: '',
-        completed: false
-      }))
+      .map((line) => {
+        const parts = line.split('|').map((p) => p.trim())
+        const title = parts[0] || ''
+        const category = parts[1] || ''
+        const rawPriority = (parts[2] || '').toLowerCase()
+        const priority = validPriorities[rawPriority] || 'Medium'
+
+        return {
+          title,
+          description: '',
+          priority,
+          category,
+          status: 'Pending',
+          due_date: null,
+          link: '',
+          completed: false
+        }
+      })
+      .filter((t) => t.title) /* drop lines with no title */
 
     if (parsedTasks.length === 0) return
 
@@ -438,14 +452,17 @@ function TaskPanel() {
           <div className='mb-3'>
             <h3 className='font-semibold text-sm'>Bulk Task Importer</h3>
             <p className='text-xs text-slate-500'>
-              Paste one task per line. Tasks can still be edited afterward.
+              One task per line. Optionally add category and priority:
+              <span className='font-mono'> Title | Category | Priority</span>.
+              Priority must be High, Medium, or Low. Category and priority
+              can be left off.
             </p>
           </div>
 
           <textarea
             value={bulkTasks}
             onChange={(e) => setBulkTasks(e.target.value)}
-            placeholder={`Example:\nCall attorney\nReview CPT disputes\nUpdate provider spreadsheet`}
+            placeholder={`Example:\nCall attorney | Legal | High\nReview CPT disputes | Provider Calls\nUpdate provider spreadsheet`}
             className='w-full min-h-40 resize-none border border-slate-300 rounded-2xl px-4 py-3 text-sm'
           />
 
