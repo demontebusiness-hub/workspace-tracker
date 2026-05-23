@@ -2,11 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabaseClient'
 
 export default function App() {
+  /* Mobile-only view switch. On lg+ screens both panels show
+     side by side and this state is ignored. */
+  const [mobileView, setMobileView] = useState('tasks')
+
   return (
-    <div className='min-h-screen bg-white text-slate-900 p-6'>
+    <div className='min-h-screen bg-white text-slate-900 p-3 sm:p-6'>
       <div className='max-w-[1600px] mx-auto'>
-        <header className='mb-6'>
-          <h1 className='text-3xl font-bold'>
+        <header className='mb-4 sm:mb-6'>
+          <h1 className='text-2xl sm:text-3xl font-bold leading-tight'>
             PoR x Summit x LL Workspace Tracker
           </h1>
           <p className='text-slate-500 mt-1 text-sm'>
@@ -14,9 +18,38 @@ export default function App() {
           </p>
         </header>
 
+        {/* Mobile tab switcher — hidden on lg+ */}
+        <div className='flex gap-2 mb-4 lg:hidden'>
+          <button
+            onClick={() => setMobileView('tasks')}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${
+              mobileView === 'tasks'
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            Tasks
+          </button>
+          <button
+            onClick={() => setMobileView('chat')}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${
+              mobileView === 'chat'
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            Chat
+          </button>
+        </div>
+
         <div className='grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start'>
-          <TaskPanel />
-          <ChatPanel />
+          {/* On mobile, show only the selected panel; on lg+ show both */}
+          <div className={mobileView === 'tasks' ? '' : 'hidden lg:block'}>
+            <TaskPanel />
+          </div>
+          <div className={mobileView === 'chat' ? '' : 'hidden lg:block'}>
+            <ChatPanel />
+          </div>
         </div>
       </div>
     </div>
@@ -355,8 +388,8 @@ function TaskPanel() {
   }
 
   return (
-    <section className='bg-white border border-slate-200 rounded-3xl p-5 shadow-sm'>
-      <div className='flex items-center justify-between gap-4 mb-5 flex-wrap'>
+    <section className='bg-white border border-slate-200 rounded-3xl p-3 sm:p-5 shadow-sm'>
+      <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5'>
         <div>
           <h2 className='text-xl font-semibold'>Operations Dashboard</h2>
           <p className='text-sm text-slate-500'>
@@ -364,17 +397,17 @@ function TaskPanel() {
           </p>
         </div>
 
-        <div className='flex gap-2 flex-wrap'>
+        <div className='flex gap-2'>
           <button
             onClick={() => setShowTaskForm(!showTaskForm)}
-            className='bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-2xl text-sm font-semibold transition'
+            className='flex-1 sm:flex-none bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-2xl text-sm font-semibold transition'
           >
             {showTaskForm ? 'Close Task Form' : '+ Add New Task'}
           </button>
 
           <button
             onClick={() => setShowBulkImporter(!showBulkImporter)}
-            className='bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded-2xl text-sm font-semibold transition'
+            className='flex-1 sm:flex-none bg-slate-200 hover:bg-slate-300 px-4 py-2.5 rounded-2xl text-sm font-semibold transition'
           >
             {showBulkImporter ? 'Close Importer' : 'Bulk Import'}
           </button>
@@ -434,14 +467,14 @@ function TaskPanel() {
 
                     <button
                       onClick={() => setEditingCategory(cat)}
-                      className='text-[10px] text-blue-600'
+                      className='text-xs text-blue-600 px-1 py-0.5'
                     >
                       Edit
                     </button>
 
                     <button
                       onClick={() => deleteCategory(cat)}
-                      className='text-[10px] text-red-500'
+                      className='text-xs text-red-500 px-1 py-0.5'
                     >
                       Delete
                     </button>
@@ -929,7 +962,7 @@ function ChatPanel() {
   }
 
   return (
-    <aside className='bg-white border border-slate-200 rounded-3xl p-4 shadow-sm sticky top-6 h-[calc(100vh-48px)] flex flex-col'>
+    <aside className='bg-white border border-slate-200 rounded-3xl p-3 sm:p-4 shadow-sm flex flex-col h-[70vh] lg:sticky lg:top-6 lg:h-[calc(100vh-48px)]'>
       <div className='mb-4'>
         <h2 className='text-xl font-semibold'>Chat</h2>
       </div>
@@ -983,7 +1016,7 @@ function ChatPanel() {
                   onClick={() =>
                     setOpenMenuId(openMenuId === msg.id ? null : msg.id)
                   }
-                  className='text-slate-500 hover:text-slate-700 text-sm px-1'
+                  className='text-slate-500 hover:text-slate-700 text-lg px-2 leading-none'
                 >
                   ⋯
                 </button>
