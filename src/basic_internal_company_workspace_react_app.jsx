@@ -75,6 +75,30 @@ function TaskPanel() {
   const [searchTerm, setSearchTerm] = useState('')
   const [sortBy, setSortBy] = useState('Newest')
 
+  /* Which category sections are collapsed. Stored as an object
+     { categoryName: true }. Personal view preference -> localStorage. */
+  const [collapsedCategories, setCollapsedCategories] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('collapsed_categories') || '{}')
+    } catch {
+      return {}
+    }
+  })
+
+  useEffect(() => {
+    localStorage.setItem(
+      'collapsed_categories',
+      JSON.stringify(collapsedCategories)
+    )
+  }, [collapsedCategories])
+
+  const toggleCategoryCollapse = (category) => {
+    setCollapsedCategories((prev) => ({
+      ...prev,
+      [category]: !prev[category]
+    }))
+  }
+
   /* Initial load from Supabase */
   useEffect(() => {
     let active = true
@@ -187,7 +211,18 @@ function TaskPanel() {
       .sort((a, b) => a.localeCompare(b))
     const ordered = [...named]
     if (groups['No Category']) ordered.push('No Category')
-    return ordered.map((category) => ({ category, tasks: groups[category] }))
+    return ordered.map((category) => {
+      const groupTasks = groups[category]
+      const done = groupTasks.filter((t) => t.completed).length
+      const overdue = groupTasks.filter((t) => isOverdue(t)).length
+      return {
+        category,
+        tasks: groupTasks,
+        count: groupTasks.length,
+        done,
+        overdue
+      }
+    })
   }, [filteredTasks])
 
   const addTask = async () => {
@@ -444,6 +479,29 @@ function TaskPanel() {
             <option value='Priority'>Sort: Priority</option>
             <option value='Group'>Group by Category</option>
           </select>
+
+          {sortBy === 'Group' && (
+            <div className='flex gap-2'>
+              <button
+                onClick={() => setCollapsedCategories({})}
+                className='bg-slate-200 hover:bg-slate-300 px-3 py-2 rounded-xl text-xs transition'
+              >
+                Expand All
+              </button>
+              <button
+                onClick={() => {
+                  const all = {}
+                  groupedTasks.forEach((g) => {
+                    all[g.category] = true
+                  })
+                  setCollapsedCategories(all)
+                }}
+                className='bg-slate-200 hover:bg-slate-300 px-3 py-2 rounded-xl text-xs transition'
+              >
+                Collapse All
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -588,29 +646,54 @@ function TaskPanel() {
         )}
 
         {sortBy === 'Group'
-          ? groupedTasks.map((group) => (
-              <div key={group.category} className='space-y-3'>
-                <div className='flex items-center gap-2 pt-1'>
-                  <h3 className='text-sm font-bold uppercase tracking-wide text-slate-500'>
-                    {group.category}
-                  </h3>
-                  <span className='bg-slate-200 text-slate-600 rounded-full px-2 py-0.5 text-[11px] font-semibold'>
-                    {group.tasks.length}
-                  </span>
-                  <div className='flex-1 h-px bg-slate-200' />
-                </div>
+          ? groupedTasks.map((group) => {
+              const collapsed = !!collapsedCategories[group.category]
+              return (
+                <div key={group.category} className='space-y-3'>
+                  <button
+                    onClick={() => toggleCategoryCollapse(group.category)}
+                    className='w-full flex items-center gap-2 pt-1 text-left group'
+                  >
+                    <span className='text-slate-400 text-xs w-4 inline-block'>
+                      {collapsed ? '▶' : '▼'}
+                    </span>
 
-                {group.tasks.map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    isOverdue={isOverdue}
-                    toggleTask={toggleTask}
-                    removeTask={removeTask}
-                  />
-                ))}
-              </div>
-            ))
+                    <h3 className='text-sm font-bold uppercase tracking-wide text-slate-500'>
+                      {group.category}
+                    </h3>
+
+                    <span className='bg-slate-200 text-slate-600 rounded-full px-2 py-0.5 text-[11px] font-semibold'>
+                      {group.count}
+                    </span>
+
+                    {group.overdue > 0 && (
+                      <span className='bg-red-100 text-red-700 rounded-full px-2 py-0.5 text-[11px] font-semibold'>
+                        {group.overdue} overdue
+                      </span>
+                    )}
+
+                    {group.done > 0 && (
+                      <span className='bg-green-100 text-green-700 rounded-full px-2 py-0.5 text-[11px] font-semibold'>
+                        {group.done} done
+                      </span>
+                    )}
+
+                    <div className='flex-1 h-px bg-slate-200' />
+                  </button>
+
+                  {!collapsed &&
+                    group.tasks.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        isOverdue={isOverdue}
+                        toggleTask={toggleTask}
+                        removeTask={removeTask}
+                      />
+                    ))}
+                </div>
+              )
+            })
           : filteredTasks.map((task) => (
               <TaskCard
                 key={task.id}
