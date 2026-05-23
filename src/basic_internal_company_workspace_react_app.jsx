@@ -102,11 +102,14 @@ function TaskPanel() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [taskToDelete, setTaskToDelete] = useState(null)
   const [editingCategory, setEditingCategory] = useState('')
+  const [showCategoryManager, setShowCategoryManager] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [bulkTasks, setBulkTasks] = useState('')
   const [showBulkImporter, setShowBulkImporter] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [sortBy, setSortBy] = useState('Newest')
+  /* Secondary sort applied WITHIN each category group (Group mode only) */
+  const [groupSortBy, setGroupSortBy] = useState('Newest')
 
   /* Which category sections are collapsed. Stored as an object
      { categoryName: true }. Personal view preference -> localStorage. */
@@ -183,6 +186,26 @@ function TaskPanel() {
     return due < today
   }
 
+  /* Shared sort. 'Newest' keeps Supabase order (already newest-first). */
+  const sortTasks = (list, mode) => {
+    const priorityRank = { High: 0, Medium: 1, Low: 2 }
+    const sorted = [...list]
+    if (mode === 'Due Date') {
+      sorted.sort((a, b) => {
+        if (!a.dueDate && !b.dueDate) return 0
+        if (!a.dueDate) return 1
+        if (!b.dueDate) return -1
+        return new Date(a.dueDate) - new Date(b.dueDate)
+      })
+    } else if (mode === 'Priority') {
+      sorted.sort(
+        (a, b) =>
+          (priorityRank[a.priority] ?? 1) - (priorityRank[b.priority] ?? 1)
+      )
+    }
+    return sorted
+  }
+
   /* Category filter -> search filter -> sort. Does not mutate `tasks`. */
   const filteredTasks = useMemo(() => {
     let result =
@@ -200,23 +223,7 @@ function TaskPanel() {
       )
     }
 
-    const priorityRank = { High: 0, Medium: 1, Low: 2 }
-    const sorted = [...result]
-
-    if (sortBy === 'Due Date') {
-      sorted.sort((a, b) => {
-        if (!a.dueDate && !b.dueDate) return 0
-        if (!a.dueDate) return 1
-        if (!b.dueDate) return -1
-        return new Date(a.dueDate) - new Date(b.dueDate)
-      })
-    } else if (sortBy === 'Priority') {
-      sorted.sort(
-        (a, b) =>
-          (priorityRank[a.priority] ?? 1) - (priorityRank[b.priority] ?? 1)
-      )
-    }
-    /* 'Newest' = leave as-is; tasks already arrive newest-first from Supabase */
+    const sorted = sortTasks(result, sortBy)
 
     return sorted
   }, [tasks, sortCategory, searchTerm, sortBy])
@@ -245,7 +252,7 @@ function TaskPanel() {
     const ordered = [...named]
     if (groups['No Category']) ordered.push('No Category')
     return ordered.map((category) => {
-      const groupTasks = groups[category]
+      const groupTasks = sortTasks(groups[category], groupSortBy)
       const done = groupTasks.filter((t) => t.completed).length
       const overdue = groupTasks.filter((t) => isOverdue(t)).length
       return {
@@ -256,7 +263,7 @@ function TaskPanel() {
         overdue
       }
     })
-  }, [filteredTasks])
+  }, [filteredTasks, groupSortBy])
 
   const addTask = async () => {
     if (!title.trim()) return
@@ -436,52 +443,82 @@ function TaskPanel() {
       </div>
 
       <div className='mb-5 space-y-3'>
-        <div className='flex flex-wrap gap-2'>
-          {categories
-            .filter((cat) => cat !== 'All')
-            .map((cat) => (
-              <div
-                key={cat}
-                className='flex items-center gap-2 bg-slate-100 border border-slate-200 rounded-full px-3 py-1'
-              >
-                {editingCategory === cat ? (
-                  <>
-                    <input
-                      defaultValue={cat}
-                      onChange={(e) => setNewCategoryName(e.target.value)}
-                      className='bg-white border border-slate-300 rounded px-2 py-1 text-xs w-24'
-                    />
+        <div>
+          <button
+            onClick={() => setShowCategoryManager(!showCategoryManager)}
+            className='bg-slate-200 hover:bg-slate-300 px-3 py-1.5 rounded-xl text-xs font-medium transition'
+          >
+            {showCategoryManager ? 'Hide Categories' : 'Manage Categories'}
+            {categories.length > 1 ? ` (${categories.length - 1})` : ''}
+          </button>
 
-                    <button
-                      onClick={() =>
-                        renameCategory(cat, newCategoryName || cat)
-                      }
-                      className='text-xs text-blue-600'
-                    >
-                      Save
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span className='text-xs'>{cat}</span>
+          {showCategoryManager && (
+            <div className='mt-3 bg-slate-50 border border-slate-200 rounded-2xl p-3'>
+              {categories.filter((cat) => cat !== 'All').length === 0 ? (
+                <p className='text-xs text-slate-400'>
+                  No categories yet. They are created when you add a task
+                  with a category.
+                </p>
+              ) : (
+                <div className='flex flex-wrap gap-2'>
+                  {categories
+                    .filter((cat) => cat !== 'All')
+                    .map((cat) => (
+                      <div
+                        key={cat}
+                        className='flex items-center gap-2 bg-white border border-slate-200 rounded-full px-3 py-1.5'
+                      >
+                        {editingCategory === cat ? (
+                          <>
+                            <input
+                              defaultValue={cat}
+                              onChange={(e) =>
+                                setNewCategoryName(e.target.value)
+                              }
+                              className='bg-white border border-slate-300 rounded px-2 py-1 text-xs w-28'
+                            />
 
-                    <button
-                      onClick={() => setEditingCategory(cat)}
-                      className='text-xs text-blue-600 px-1 py-0.5'
-                    >
-                      Edit
-                    </button>
+                            <button
+                              onClick={() =>
+                                renameCategory(cat, newCategoryName || cat)
+                              }
+                              className='text-xs text-blue-600 px-1'
+                            >
+                              Save
+                            </button>
 
-                    <button
-                      onClick={() => deleteCategory(cat)}
-                      className='text-xs text-red-500 px-1 py-0.5'
-                    >
-                      Delete
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
+                            <button
+                              onClick={() => setEditingCategory('')}
+                              className='text-xs text-slate-400 px-1'
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className='text-xs'>{cat}</span>
+
+                            <button
+                              onClick={() => setEditingCategory(cat)}
+                              className='text-xs text-blue-600 px-1 py-0.5'
+                            >
+                              Edit
+                            </button>
+
+                            <button
+                              onClick={() => deleteCategory(cat)}
+                              className='text-xs text-red-500 px-1 py-0.5'
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className='flex flex-wrap gap-2 items-center'>
@@ -514,7 +551,17 @@ function TaskPanel() {
           </select>
 
           {sortBy === 'Group' && (
-            <div className='flex gap-2'>
+            <div className='flex gap-2 flex-wrap items-center'>
+              <select
+                value={groupSortBy}
+                onChange={(e) => setGroupSortBy(e.target.value)}
+                className='border border-slate-300 rounded-xl px-3 py-2 text-sm'
+              >
+                <option value='Newest'>Within group: Newest</option>
+                <option value='Due Date'>Within group: Due Date</option>
+                <option value='Priority'>Within group: Priority</option>
+              </select>
+
               <button
                 onClick={() => setCollapsedCategories({})}
                 className='bg-slate-200 hover:bg-slate-300 px-3 py-2 rounded-xl text-xs transition'
@@ -891,7 +938,7 @@ function ChatPanel() {
         .from('messages')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(500)
 
       if (!active) return
 
