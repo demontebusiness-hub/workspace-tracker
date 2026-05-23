@@ -99,6 +99,9 @@ function TaskPanel() {
   const [link, setLink] = useState('')
   const [sortCategory, setSortCategory] = useState('All')
   const [showTaskForm, setShowTaskForm] = useState(false)
+  const [editingTaskId, setEditingTaskId] = useState(null)
+  const [selectedIds, setSelectedIds] = useState([])
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [taskToDelete, setTaskToDelete] = useState(null)
   const [editingCategory, setEditingCategory] = useState('')
@@ -265,31 +268,8 @@ function TaskPanel() {
     })
   }, [filteredTasks, groupSortBy])
 
-  const addTask = async () => {
-    if (!title.trim()) return
-
-    /* If a category was typed in the "New category" box but Add was
-       never clicked, still use it. Typed value wins; otherwise the
-       selected category; otherwise empty. */
-    const finalCategory =
-      (newCategoryName.trim() || category || '').trim()
-
-    const { error } = await supabase.from('tasks').insert({
-      title,
-      description,
-      priority,
-      category: finalCategory,
-      status,
-      due_date: dueDate || null,
-      link,
-      completed: false
-    })
-
-    if (error) {
-      console.error('Error adding task:', error)
-      return
-    }
-
+  /* Reset all task-form fields to defaults */
+  const resetTaskForm = () => {
     setTitle('')
     setDescription('')
     setPriority('Medium')
@@ -298,7 +278,61 @@ function TaskPanel() {
     setStatus('Pending')
     setDueDate('')
     setLink('')
+    setEditingTaskId(null)
     setShowTaskForm(false)
+  }
+
+  /* Open the form pre-filled with a task's values for editing */
+  const startEditTask = (task) => {
+    setEditingTaskId(task.id)
+    setTitle(task.title || '')
+    setDescription(task.description || '')
+    setPriority(task.priority || 'Medium')
+    setCategory(task.category || '')
+    setNewCategoryName('')
+    setStatus(task.status || 'Pending')
+    setDueDate(task.dueDate || '')
+    setLink(task.link || '')
+    setShowTaskForm(true)
+    setShowBulkImporter(false)
+  }
+
+  /* Save the form: inserts a new task, or updates the one being edited */
+  const saveTask = async () => {
+    if (!title.trim()) return
+
+    const finalCategory = (newCategoryName.trim() || category || '').trim()
+
+    const fields = {
+      title,
+      description,
+      priority,
+      category: finalCategory,
+      status,
+      due_date: dueDate || null,
+      link
+    }
+
+    if (editingTaskId) {
+      const { error } = await supabase
+        .from('tasks')
+        .update(fields)
+        .eq('id', editingTaskId)
+      if (error) {
+        console.error('Error updating task:', error)
+        return
+      }
+    } else {
+      const { error } = await supabase
+        .from('tasks')
+        .insert({ ...fields, completed: false })
+      if (error) {
+        console.error('Error adding task:', error)
+        return
+      }
+    }
+
+    resetTaskForm()
   }
 
   const removeTask = (id) => {
@@ -316,6 +350,36 @@ function TaskPanel() {
 
     setTaskToDelete(null)
     setShowDeleteModal(false)
+  }
+
+  /* ---- Bulk selection ---- */
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    )
+  }
+
+  const clearSelection = () => setSelectedIds([])
+
+  const bulkMarkDone = async () => {
+    if (selectedIds.length === 0) return
+    const { error } = await supabase
+      .from('tasks')
+      .update({ completed: true })
+      .in('id', selectedIds)
+    if (error) console.error('Error marking tasks done:', error)
+    setSelectedIds([])
+  }
+
+  const confirmBulkDelete = async () => {
+    if (selectedIds.length === 0) return
+    const { error } = await supabase
+      .from('tasks')
+      .delete()
+      .in('id', selectedIds)
+    if (error) console.error('Error deleting tasks:', error)
+    setSelectedIds([])
+    setShowBulkDeleteModal(false)
   }
 
   const renameCategory = async (oldCategory, updatedCategory) => {
@@ -416,7 +480,14 @@ function TaskPanel() {
 
         <div className='flex gap-2'>
           <button
-            onClick={() => setShowTaskForm(!showTaskForm)}
+            onClick={() => {
+              if (showTaskForm) {
+                resetTaskForm()
+              } else {
+                resetTaskForm()
+                setShowTaskForm(true)
+              }
+            }}
             className='flex-1 sm:flex-none bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-2xl text-sm font-semibold transition'
           >
             {showTaskForm ? 'Close Task Form' : '+ Add New Task'}
@@ -628,6 +699,9 @@ function TaskPanel() {
 
       {showTaskForm && (
         <div className='bg-slate-50 border border-slate-200 rounded-3xl p-4 mb-5'>
+          <h3 className='font-semibold text-sm mb-3'>
+            {editingTaskId ? 'Edit Task' : 'New Task'}
+          </h3>
           <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
             <input
               value={title}
@@ -715,16 +789,44 @@ function TaskPanel() {
           </div>
 
           <button
-            onClick={addTask}
+            onClick={saveTask}
             className='w-full mt-4 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-2xl text-sm font-semibold transition'
           >
-            Save Task
+            {editingTaskId ? 'Update Task' : 'Save Task'}
+          </button>
+        </div>
+      )}
+
+      {selectedIds.length > 0 && (
+        <div className='flex items-center gap-3 flex-wrap mb-4 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3'>
+          <span className='text-sm font-semibold text-blue-800'>
+            {selectedIds.length} selected
+          </span>
+
+          <button
+            onClick={bulkMarkDone}
+            className='bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded-xl text-xs font-semibold transition'
+          >
+            Mark Done
+          </button>
+
+          <button
+            onClick={() => setShowBulkDeleteModal(true)}
+            className='bg-red-500 hover:bg-red-400 text-white px-3 py-2 rounded-xl text-xs font-semibold transition'
+          >
+            Delete
+          </button>
+
+          <button
+            onClick={clearSelection}
+            className='bg-slate-200 hover:bg-slate-300 px-3 py-2 rounded-xl text-xs transition'
+          >
+            Clear selection
           </button>
         </div>
       )}
 
       <div className='space-y-3'>
-        {loading && (
           <div className='bg-slate-50 border border-slate-200 rounded-3xl p-8 text-center text-sm text-slate-400'>
             Loading tasks...
           </div>
@@ -782,6 +884,9 @@ function TaskPanel() {
                         isOverdue={isOverdue}
                         toggleTask={toggleTask}
                         removeTask={removeTask}
+                        startEditTask={startEditTask}
+                        selected={selectedIds.includes(task.id)}
+                        toggleSelect={toggleSelect}
                       />
                     ))}
                 </div>
@@ -794,6 +899,9 @@ function TaskPanel() {
                 isOverdue={isOverdue}
                 toggleTask={toggleTask}
                 removeTask={removeTask}
+                startEditTask={startEditTask}
+                selected={selectedIds.includes(task.id)}
+                toggleSelect={toggleSelect}
               />
             ))}
       </div>
@@ -828,27 +936,70 @@ function TaskPanel() {
           </div>
         </div>
       )}
+      {showBulkDeleteModal && (
+        <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50'>
+          <div className='bg-white rounded-3xl p-6 w-[90%] max-w-sm shadow-2xl'>
+            <h3 className='text-lg font-semibold mb-2'>
+              Delete {selectedIds.length} tasks?
+            </h3>
+
+            <p className='text-sm text-slate-500 mb-5'>
+              This will permanently delete all {selectedIds.length} selected
+              tasks. This action cannot be undone.
+            </p>
+
+            <div className='flex gap-3 justify-end'>
+              <button
+                onClick={() => setShowBulkDeleteModal(false)}
+                className='px-4 py-2 rounded-xl bg-slate-200 text-sm'
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={confirmBulkDelete}
+                className='px-4 py-2 rounded-xl bg-red-500 text-white text-sm'
+              >
+                Delete {selectedIds.length}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
 
 /* Single task card. Extracted so the flat list and the grouped
    view render identical cards without duplicated JSX. */
-function TaskCard({ task, isOverdue, toggleTask, removeTask }) {
+function TaskCard({
+  task,
+  isOverdue,
+  toggleTask,
+  removeTask,
+  startEditTask,
+  selected,
+  toggleSelect
+}) {
   const overdue = isOverdue(task)
   return (
     <div
       className={`rounded-3xl p-4 border ${
-        overdue ? 'bg-red-50 border-red-300' : 'bg-slate-50 border-slate-200'
+        selected
+          ? 'bg-blue-50 border-blue-400'
+          : overdue
+          ? 'bg-red-50 border-red-300'
+          : 'bg-slate-50 border-slate-200'
       }`}
     >
       <div className='flex items-start justify-between gap-4'>
         <div className='flex gap-3 flex-1'>
           <input
             type='checkbox'
-            checked={task.completed}
-            onChange={() => toggleTask(task.id)}
+            checked={selected}
+            onChange={() => toggleSelect(task.id)}
             className='mt-1 w-4 h-4'
+            title='Select for bulk actions'
           />
 
           <div className='flex-1'>
@@ -862,6 +1013,12 @@ function TaskCard({ task, isOverdue, toggleTask, removeTask }) {
               <span className='bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-[11px]'>
                 {task.status}
               </span>
+
+              {task.completed && (
+                <span className='bg-green-100 text-green-700 px-2 py-1 rounded-full text-[11px] font-semibold'>
+                  Done
+                </span>
+              )}
             </div>
 
             <h3
@@ -913,12 +1070,32 @@ function TaskCard({ task, isOverdue, toggleTask, removeTask }) {
           </div>
         </div>
 
-        <button
-          onClick={() => removeTask(task.id)}
-          className='bg-red-500 hover:bg-red-400 text-white px-3 py-2 rounded-xl text-xs transition'
-        >
-          Remove
-        </button>
+        <div className='flex flex-col gap-2 shrink-0'>
+          <button
+            onClick={() => toggleTask(task.id)}
+            className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+              task.completed
+                ? 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                : 'bg-green-600 hover:bg-green-500 text-white'
+            }`}
+          >
+            {task.completed ? 'Reopen' : 'Mark Done'}
+          </button>
+
+          <button
+            onClick={() => startEditTask(task)}
+            className='bg-slate-200 hover:bg-slate-300 px-3 py-2 rounded-xl text-xs transition'
+          >
+            Edit
+          </button>
+
+          <button
+            onClick={() => removeTask(task.id)}
+            className='bg-red-500 hover:bg-red-400 text-white px-3 py-2 rounded-xl text-xs transition'
+          >
+            Remove
+          </button>
+        </div>
       </div>
     </div>
   )
