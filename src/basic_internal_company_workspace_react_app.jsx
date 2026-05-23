@@ -352,9 +352,10 @@ function TaskPanel() {
   }
 
   const importBulkTasks = async () => {
-    /* Each line: "Title | Category | Priority"
-       Category and Priority are optional. Priority must be
-       High/Medium/Low (case-insensitive) or it falls back to Medium. */
+    /* Each line: "Title | Category | Priority | Description | Due Date"
+       All fields after Title are optional. Priority must be
+       High/Medium/Low (case-insensitive) or it falls back to Medium.
+       Due Date should be YYYY-MM-DD; unparseable dates are ignored. */
     const validPriorities = { high: 'High', medium: 'Medium', low: 'Low' }
 
     const parsedTasks = bulkTasks
@@ -367,14 +368,23 @@ function TaskPanel() {
         const category = parts[1] || ''
         const rawPriority = (parts[2] || '').toLowerCase()
         const priority = validPriorities[rawPriority] || 'Medium'
+        const description = parts[3] || ''
+
+        /* Field 5: due date. Keep only if it parses to a real date. */
+        let dueDate = null
+        const rawDate = parts[4] || ''
+        if (rawDate) {
+          const parsed = new Date(rawDate)
+          if (!isNaN(parsed.getTime())) dueDate = rawDate
+        }
 
         return {
           title,
-          description: '',
+          description,
           priority,
           category,
           status: 'Pending',
-          due_date: null,
+          due_date: dueDate,
           link: '',
           completed: false
         }
@@ -590,17 +600,20 @@ function TaskPanel() {
           <div className='mb-3'>
             <h3 className='font-semibold text-sm'>Bulk Task Importer</h3>
             <p className='text-xs text-slate-500'>
-              One task per line. Optionally add category and priority:
-              <span className='font-mono'> Title | Category | Priority</span>.
-              Priority must be High, Medium, or Low. Category and priority
-              can be left off.
+              One task per line. Fields are optional, separated by | :
+              <span className='font-mono'>
+                {' '}
+                Title | Category | Priority | Description | Due Date
+              </span>
+              . Priority must be High, Medium, or Low. Due Date should be
+              YYYY-MM-DD. Skip a field by leaving it blank between pipes.
             </p>
           </div>
 
           <textarea
             value={bulkTasks}
             onChange={(e) => setBulkTasks(e.target.value)}
-            placeholder={`Example:\nCall attorney | Legal | High\nReview CPT disputes | Provider Calls\nUpdate provider spreadsheet`}
+            placeholder={`Example:\nCall attorney | Legal | High | Discuss Smith lien | 2026-06-01\nReview CPT disputes | Provider Calls\nUpdate provider spreadsheet\nFile demand | Legal | | | 2026-06-15`}
             className='w-full min-h-40 resize-none border border-slate-300 rounded-2xl px-4 py-3 text-sm'
           />
 
