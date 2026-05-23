@@ -18,6 +18,8 @@ export default function App() {
           </p>
         </header>
 
+        <PinnedLinks />
+
         {/* Mobile tab switcher — hidden on lg+ */}
         <div className='flex gap-2 mb-4 lg:hidden'>
           <button
@@ -51,6 +53,201 @@ export default function App() {
             <ChatPanel />
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/* Pinned company links bar. Stored in Supabase `links` table so the
+   list persists and syncs across the team. Add / edit / remove. */
+function PinnedLinks() {
+  const [links, setLinks] = useState([])
+  const [editingId, setEditingId] = useState(null)
+  const [draftName, setDraftName] = useState('')
+  const [draftUrl, setDraftUrl] = useState('')
+  const [adding, setAdding] = useState(false)
+
+  useEffect(() => {
+    let active = true
+
+    const loadLinks = async () => {
+      const { data, error } = await supabase
+        .from('links')
+        .select('*')
+        .order('position', { ascending: true })
+        .order('created_at', { ascending: true })
+      if (!active) return
+      if (error) {
+        console.error('Error loading links:', error)
+      } else {
+        setLinks(data || [])
+      }
+    }
+
+    loadLinks()
+
+    const channel = supabase
+      .channel('links-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'links' },
+        loadLinks
+      )
+      .subscribe()
+
+    return () => {
+      active = false
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  /* Make sure a URL has a protocol so the anchor works */
+  const normalizeUrl = (url) => {
+    const trimmed = url.trim()
+    if (!trimmed) return ''
+    if (/^https?:\/\//i.test(trimmed)) return trimmed
+    return 'https://' + trimmed
+  }
+
+  const startEdit = (link) => {
+    setEditingId(link.id)
+    setDraftName(link.name)
+    setDraftUrl(link.url)
+    setAdding(false)
+  }
+
+  const saveEdit = async (id) => {
+    if (!draftName.trim() || !draftUrl.trim()) return
+    const { error } = await supabase
+      .from('links')
+      .update({ name: draftName.trim(), url: normalizeUrl(draftUrl) })
+      .eq('id', id)
+    if (error) console.error('Error updating link:', error)
+    setEditingId(null)
+  }
+
+  const removeLink = async (id) => {
+    const { error } = await supabase.from('links').delete().eq('id', id)
+    if (error) console.error('Error deleting link:', error)
+  }
+
+  const addLink = async () => {
+    if (!draftName.trim() || !draftUrl.trim()) return
+    const { error } = await supabase.from('links').insert({
+      name: draftName.trim(),
+      url: normalizeUrl(draftUrl),
+      position: links.length
+    })
+    if (error) console.error('Error adding link:', error)
+    setDraftName('')
+    setDraftUrl('')
+    setAdding(false)
+  }
+
+  return (
+    <div className='mb-4 sm:mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-3'>
+      <div className='flex flex-wrap items-center gap-2'>
+        {links.map((link) =>
+          editingId === link.id ? (
+            <div
+              key={link.id}
+              className='flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl p-1.5 flex-wrap'
+            >
+              <input
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                placeholder='Name'
+                className='border border-slate-300 rounded px-2 py-1 text-xs w-32'
+              />
+              <input
+                value={draftUrl}
+                onChange={(e) => setDraftUrl(e.target.value)}
+                placeholder='URL'
+                className='border border-slate-300 rounded px-2 py-1 text-xs w-44'
+              />
+              <button
+                onClick={() => saveEdit(link.id)}
+                className='text-xs text-blue-600 px-1'
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setEditingId(null)}
+                className='text-xs text-slate-400 px-1'
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div
+              key={link.id}
+              className='flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5'
+            >
+              <a
+                href={link.url}
+                target='_blank'
+                rel='noreferrer'
+                className='text-sm font-medium text-blue-600 hover:underline'
+              >
+                {link.name}
+              </a>
+              <button
+                onClick={() => startEdit(link)}
+                className='text-[11px] text-slate-400 hover:text-slate-600 px-1'
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => removeLink(link.id)}
+                className='text-[11px] text-red-400 hover:text-red-600 px-1'
+              >
+                ✕
+              </button>
+            </div>
+          )
+        )}
+
+        {adding ? (
+          <div className='flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl p-1.5 flex-wrap'>
+            <input
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              placeholder='Name'
+              className='border border-slate-300 rounded px-2 py-1 text-xs w-32'
+            />
+            <input
+              value={draftUrl}
+              onChange={(e) => setDraftUrl(e.target.value)}
+              placeholder='URL'
+              className='border border-slate-300 rounded px-2 py-1 text-xs w-44'
+            />
+            <button onClick={addLink} className='text-xs text-blue-600 px-1'>
+              Add
+            </button>
+            <button
+              onClick={() => {
+                setAdding(false)
+                setDraftName('')
+                setDraftUrl('')
+              }}
+              className='text-xs text-slate-400 px-1'
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => {
+              setAdding(true)
+              setEditingId(null)
+              setDraftName('')
+              setDraftUrl('')
+            }}
+            className='text-xs bg-slate-200 hover:bg-slate-300 rounded-xl px-3 py-1.5 transition'
+          >
+            + Add link
+          </button>
+        )}
       </div>
     </div>
   )
@@ -110,7 +307,7 @@ function TaskPanel() {
   const [bulkTasks, setBulkTasks] = useState('')
   const [showBulkImporter, setShowBulkImporter] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [sortBy, setSortBy] = useState('Newest')
+  const [sortBy, setSortBy] = useState('Group')
   /* Secondary sort applied WITHIN each category group (Group mode only) */
   const [groupSortBy, setGroupSortBy] = useState('Newest')
 
